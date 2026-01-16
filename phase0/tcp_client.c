@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,4 +30,27 @@ int main() {
   } else {
     printf("[INFO] Connected to tcp server\n");
   }
+
+  // sending message to server
+  while (1) {
+    char *line;
+    size_t line_len = 0, read_n;
+
+    read_n = getline(&line, &line_len, stdin);
+
+    send(client_sock_fd, line, line_len, 0);
+
+    char buff[BUFF_SIZE];
+    memset(buff, 0, BUFF_SIZE);
+
+    read_n = recv(client_sock_fd, buff, BUFF_SIZE, 0);
+
+    if (read_n <= 0) {
+      close(client_sock_fd);
+      exit(1);
+    }
+
+    printf("[SERVER_MSG] %s", buff);
+  }
+  return 0;
 }
