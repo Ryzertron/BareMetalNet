@@ -20,9 +20,14 @@ void strrev(char *str) {
     str[end] = temp;
   }
 }
+
 int main() {
   // Create listening socket
   int listen_sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (listen_sock_fd < 0) {
+    perror("socket creation failed");
+    exit(1);
+  }
 
   // Set the socket as reusable address
   int enable = 1;
@@ -36,44 +41,84 @@ int main() {
   server_addr.sin_port = htons(PORT);
 
   // Bind the socket to the address-port combination
-  bind(listen_sock_fd, (struct sockaddr *)&server_addr, sizeof(server_addr));
+  if (bind(listen_sock_fd, (struct sockaddr *)&server_addr,
+           sizeof(server_addr)) < 0) {
+    perror("bind failed");
+    close(listen_sock_fd);
+    exit(1);
+  }
 
-  listen(listen_sock_fd, MAX_ACCEPT_BACKLOG);
+  if (listen(listen_sock_fd, MAX_ACCEPT_BACKLOG) < 0) {
+    perror("listen failed");
+    close(listen_sock_fd);
+    exit(1);
+  }
+
   printf("[INFO] Server listening on port %d\n", PORT);
-  /***********************************************************************************************************************/
 
-  // Structure for storing client address
-  struct sockaddr_in client_addr;
-  socklen_t client_addr_len;
-
-  // Accept client reqs
-  int conn_sock_fd =
-      accept(listen_sock_fd, (struct sockaddr *)&client_addr, &client_addr_len);
-  printf("[INFO] Client connected to the server \n");
-
+  // Main server loop to handle multiple clients sequentially
   while (1) {
-    // Buffer to store client messages
-    char buff[BUFF_SIZE];
-    memset(buff, 0, BUFF_SIZE);
+    // Structure for storing client address
+    struct sockaddr_in client_addr;
+    socklen_t client_addr_len = sizeof(struct sockaddr_in);
+    char client_ip[INET_ADDRSTRLEN];
 
-    // Read the message from client to Buffer
-    ssize_t read_n = recv(conn_sock_fd, buff, sizeof(buff), 0);
+    printf("[INFO] Waiting for new client connection...\n");
 
-    // client closed or error
-    if (read_n < 0) {
-      printf("[INFO] Error occured. Closing server\n");
-      close(conn_sock_fd);
-      exit(1);
-    } else if (read_n == 0) {
-      printf("[INFO] Client Disconnected. Closing server\n");
-      close(conn_sock_fd);
-      exit(1);
+    // Accept client request
+    int conn_sock_fd = accept(listen_sock_fd, (struct sockaddr *)&client_addr,
+                              &client_addr_len);
+    if (conn_sock_fd < 0) {
+      perror("accept failed");
+      continue; // Continue to accept next client
     }
 
-    printf("[CLIENT MSG] %s", buff);
+    // Convert client IP to string
+    inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
+    printf("[INFO] Client connected from %s:%d\n", client_ip,
+           ntohs(client_addr.sin_port));
 
-    strrev(buff);
+    // Handle this client until they disconnect
+    while (1) {
+      // Buffer to store client messages
+      char buff[BUFF_SIZE];
+      memset(buff, 0, BUFF_SIZE);
 
-    send(conn_sock_fd, buff, read_n, 0);
+      // Read the message from client to Buffer
+      ssize_t read_n = recv(conn_sock_fd, buff, sizeof(buff), 0);
+
+      // client closed or error
+      if (read_n < 0) {
+        perror("[ERROR] recv failed");
+        break;
+      } else if (read_n == 0) {
+        printf("[INFO] Client %s:%d disconnected\n", client_ip,
+               ntohs(client_addr.sin_port));
+        break;
+      }
+
+      printf("[CLIENT %s:%d] %s", client_ip, ntohs(client_addr.sin_port), buff);
+
+      // Reverse the string if it's not empty
+      if (read_n > 1) {
+        strrev(buff);
+      }
+
+      // Send the reversed message back
+      if (send(conn_sock_fd, buff, read_n, 0) < 0) {
+        perror("[ERROR] send failed");
+        break;
+      }
+    }
+
+    // Close the connection socket for this client
+    close(conn_sock_fd);
+    printf("[INFO] Connection closed for client %s:%d\n", client_ip,
+           ntohs(client_addr.sin_port));
   }
+
+  // Close the listening socket (though we never reach here in this infinite
+  // loop)
+  close(listen_sock_fd);
+  return 0;
 }
