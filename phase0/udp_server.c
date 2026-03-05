@@ -5,7 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define PORT 8888
+#define PORT 8080
 #define BUFFER_SIZE 1024
 
 // Structure to pass data to thread
